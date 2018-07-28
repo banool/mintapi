@@ -1,6 +1,7 @@
 import atexit
 from datetime import date, datetime, timedelta
 import json
+import pyotp
 import random
 import re
 import requests
@@ -43,7 +44,11 @@ def reverse_credit_amount(row):
     return amount if row['isDebit'] else -amount
 
 
-def get_web_driver(email, password):
+def generate_two_factor_code(two_factor_barcode):
+    return pyotp.TOTP(two_factor_barcode).now()
+
+
+def get_web_driver(email, password, two_factor_barcode=None):
     driver = Chrome()
 
     driver.get("https://www.mint.com")
@@ -53,6 +58,14 @@ def get_web_driver(email, password):
     driver.find_element_by_id("ius-userid").send_keys(email)
     driver.find_element_by_id("ius-password").send_keys(password)
     driver.find_element_by_id("ius-sign-in-submit-btn").submit()
+
+    if two_factor_barcode:
+        while not driver.find_element_by_id("ius-mfa-soft-token"):
+            time.sleep(1)
+
+    two_factor_code = generate_two_factor_code(two_factor_barcode)
+    driver.find_element_by_id("ius-mfa-soft-token").send_keys(two_factor_code)
+    driver.find_element_by_id("ius-mfa-soft-token-submit-btn").submit()
 
     # Wait until logged in, just in case we need to deal with MFA.
     while not driver.current_url.startswith(
@@ -112,9 +125,9 @@ class Mint(object):
     token = None
     driver = None
 
-    def __init__(self, email=None, password=None):
+    def __init__(self, email=None, password=None, two_factor_barcode=None):
         if email and password:
-            self.login_and_get_token(email, password)
+            self.login_and_get_token(email, password, two_factor_barcode)
 
     @classmethod
     def create(cls, email, password):
@@ -172,11 +185,11 @@ class Mint(object):
     def post(self, url, **kwargs):
         return self.driver.request('POST', url, **kwargs)
 
-    def login_and_get_token(self, email, password):
+    def login_and_get_token(self, email, password, two_factor_barcode=None):
         if self.token and self.driver:
             return
 
-        self.driver = get_web_driver(email, password)
+        self.driver = get_web_driver(email, password, two_factor_barcode)
         self.token = self.get_token()
 
     def get_token(self):
@@ -609,6 +622,11 @@ def main():
         nargs='?',
         default=None,
         help='The password for your Mint.com account')
+
+    cmdline.add_argument(
+        '--two-factor-barcode',
+        help='Barcode for 2 factor code (for if you have 2FA enabled',
+    )
 
     cmdline.add_argument(
         '--accounts',
