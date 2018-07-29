@@ -13,6 +13,8 @@ except ImportError:
     from io import BytesIO as StringIO  # Python 3
 
 from seleniumrequests import Chrome
+from selenium.webdriver.chrome.options import Options
+
 import xmltodict
 
 try:
@@ -48,8 +50,12 @@ def generate_two_factor_code(two_factor_barcode):
     return pyotp.TOTP(two_factor_barcode).now()
 
 
-def get_web_driver(email, password, two_factor_barcode=None):
-    driver = Chrome()
+def get_web_driver(email, password, two_factor_barcode=None, headless=False):
+    options = Options()
+    if headless:
+        options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
+    driver = Chrome(chrome_options=options)
 
     driver.get("https://www.mint.com")
     driver.implicitly_wait(20)  # seconds
@@ -73,8 +79,8 @@ def get_web_driver(email, password, two_factor_barcode=None):
         time.sleep(1)
 
     # Wait until the overview page has actually loaded.
-    driver.implicitly_wait(20)  # seconds
-    driver.find_element_by_id("transaction")
+    while not driver.find_element_by_id("transaction"):
+        time.sleep(1)
 
     return driver
 
@@ -125,13 +131,20 @@ class Mint(object):
     token = None
     driver = None
 
-    def __init__(self, email=None, password=None, two_factor_barcode=None):
+    def __init__(
+        self,
+        email=None,
+        password=None,
+        two_factor_barcode=None,
+        headless=False,
+    ):
         if email and password:
-            self.login_and_get_token(email, password, two_factor_barcode)
-
-    @classmethod
-    def create(cls, email, password):
-        return Mint(email, password)
+            self.login_and_get_token(
+                email,
+                password,
+                two_factor_barcode,
+                headless,
+            )
 
     @classmethod
     def get_rnd(cls):  # {{{
@@ -185,11 +198,17 @@ class Mint(object):
     def post(self, url, **kwargs):
         return self.driver.request('POST', url, **kwargs)
 
-    def login_and_get_token(self, email, password, two_factor_barcode=None):
+    def login_and_get_token(
+        self,
+        email,
+        password,
+        two_factor_barcode=None,
+        headless=False,
+    ):
         if self.token and self.driver:
             return
 
-        self.driver = get_web_driver(email, password, two_factor_barcode)
+        self.driver = get_web_driver(email, password, two_factor_barcode, headless)
         self.token = self.get_token()
 
     def get_token(self):
@@ -562,13 +581,13 @@ class Mint(object):
             headers=JSON_HEADER)
 
 
-def get_accounts(email, password, get_detail=False):
-    mint = Mint.create(email, password)
+def get_accounts(email, password, get_detail=False, two_factor_barcode=None, headless=False):
+    mint = Mint(email, password, two_factor_barcode, headless)
     return mint.get_accounts(get_detail=get_detail)
 
 
-def get_net_worth(email, password):
-    mint = Mint.create(email, password)
+def get_net_worth(email, password, two_factor_barcode=None, headless=False):
+    mint = Mint(email, password, two_factor_barcode, headless)
     account_data = mint.get_accounts()
     return mint.get_net_worth(account_data)
 
@@ -591,13 +610,13 @@ def print_accounts(accounts):
     print(json.dumps(make_accounts_presentable(accounts), indent=2))
 
 
-def get_budgets(email, password):
-    mint = Mint.create(email, password)
+def get_budgets(email, password, two_factor_barcode=None, headless=False):
+    mint = Mint(email, password, two_factor_barcode, headless)
     return mint.get_budgets()
 
 
-def initiate_account_refresh(email, password):
-    mint = Mint.create(email, password)
+def initiate_account_refresh(email, password, two_factor_barcode=None, headless=False):
+    mint = Mint(email, password, two_factor_barcode, headless)
     return mint.initiate_account_refresh()
 
 
@@ -625,6 +644,11 @@ def main():
 
     cmdline.add_argument(
         '--two-factor-barcode',
+        help='Barcode for 2 factor code (for if you have 2FA enabled',
+    )
+    cmdline.add_argument(
+        '--headless',
+        action='store_true',
         help='Barcode for 2 factor code (for if you have 2FA enabled',
     )
 
@@ -741,7 +765,7 @@ def main():
                 options.extended_transactions, options.net_worth]):
         options.accounts = True
 
-    mint = Mint.create(email, password)
+    mint = Mint(email, password, options.two_factor_barcode, options.headless)
     atexit.register(mint.close)  # Ensure everything is torn down.
 
     data = None
