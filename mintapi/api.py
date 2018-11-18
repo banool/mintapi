@@ -114,17 +114,23 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
         try:
             driver.find_element_by_id('ius-mfa-options-form')
             try:
-                mfa_method_option = driver.find_element_by_id('ius-mfa-option-{}'.format(mfa_method))
-                mfa_method_option.click()
-                mfa_method_submit = driver.find_element_by_id("ius-mfa-options-submit-btn")
-                mfa_method_submit.click()
+                if mfa_method == "app":
+                    # mfa_input_callback should be a function that returns the 2fa barcode.
+                    two_factor_code = mfa_input_callback()
+                    driver.find_element_by_id("ius-mfa-soft-token").send_keys(two_factor_code)
+                    driver.find_element_by_id("ius-mfa-soft-token-submit-btn").submit()                
+                else:
+                    mfa_method_option = driver.find_element_by_id('ius-mfa-option-{}'.format(mfa_method))
+                    mfa_method_option.click()
+                    mfa_method_submit = driver.find_element_by_id("ius-mfa-options-submit-btn")
+                    mfa_method_submit.click()
 
-                mfa_code = (mfa_input_callback or input)("Please enter your 6-digit MFA code: ")
-                mfa_code_input = driver.find_element_by_id("ius-mfa-confirm-code")
-                mfa_code_input.send_keys(mfa_code)
+                    mfa_code = (mfa_input_callback or input)("Please enter your 6-digit MFA code: ")
+                    mfa_code_input = driver.find_element_by_id("ius-mfa-confirm-code")
+                    mfa_code_input.send_keys(mfa_code)
 
-                mfa_code_submit = driver.find_element_by_id("ius-mfa-otp-submit-btn")
-                mfa_code_submit.click()
+                    mfa_code_submit = driver.find_element_by_id("ius-mfa-otp-submit-btn")
+                    mfa_code_submit.click()
             except Exception:  # if anything goes wrong for any reason, give up on MFA
                 mfa_method = None
                 warnings.warn("Giving up on handling MFA. Please complete "
