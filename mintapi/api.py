@@ -21,8 +21,6 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from seleniumrequests import Chrome
-from selenium.webdriver.chrome.options import Options
-
 import xmltodict
 
 try:
@@ -107,14 +105,6 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
     driver.find_element_by_id("ius-password").send_keys(password)
     driver.find_element_by_id("ius-sign-in-submit-btn").submit()
 
-    if two_factor_barcode:
-        while not driver.find_element_by_id("ius-mfa-soft-token"):
-            time.sleep(1)
-
-    two_factor_code = generate_two_factor_code(two_factor_barcode)
-    driver.find_element_by_id("ius-mfa-soft-token").send_keys(two_factor_code)
-    driver.find_element_by_id("ius-mfa-soft-token-submit-btn").submit()
-
     # Wait until logged in, just in case we need to deal with MFA.
     while not driver.current_url.startswith(
             'https://mint.intuit.com/overview.event'):
@@ -122,7 +112,6 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
 
         driver.implicitly_wait(1)  # seconds
         try:
-            driver.find_element_by_id('ius-mfa-options-form')
             try:
                 if mfa_method == "app":
                     # mfa_input_callback should be a function that returns the 2fa barcode.
@@ -130,6 +119,8 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
                     driver.find_element_by_id("ius-mfa-soft-token").send_keys(two_factor_code)
                     driver.find_element_by_id("ius-mfa-soft-token-submit-btn").submit()                
                 else:
+                    driver.find_element_by_id('ius-mfa-options-form')
+
                     mfa_method_option = driver.find_element_by_id('ius-mfa-option-{}'.format(mfa_method))
                     mfa_method_option.click()
                     mfa_method_submit = driver.find_element_by_id("ius-mfa-options-submit-btn")
@@ -141,10 +132,10 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
 
                     mfa_code_submit = driver.find_element_by_id("ius-mfa-otp-submit-btn")
                     mfa_code_submit.click()
-            except Exception:  # if anything goes wrong for any reason, give up on MFA
+            except Exception as e:  # if anything goes wrong for any reason, give up on MFA
                 mfa_method = None
                 warnings.warn("Giving up on handling MFA. Please complete "
-                              "the MFA process manually in the browser.")
+                              "the MFA process manually in the browser. Exception: " + repr(e))
         except NoSuchElementException:
             pass
         finally:
@@ -657,13 +648,13 @@ class Mint(object):
             headers=JSON_HEADER)
 
 
-def get_accounts(email, password, get_detail=False, two_factor_barcode=None, headless=False):
-    mint = Mint(email, password, two_factor_barcode, headless)
+def get_accounts(email, password, get_detail=False):
+    mint = Mint.create(email, password)
     return mint.get_accounts(get_detail=get_detail)
 
 
-def get_net_worth(email, password, two_factor_barcode=None, headless=False):
-    mint = Mint(email, password, two_factor_barcode, headless)
+def get_net_worth(email, password):
+    mint = Mint.create(email, password)
     account_data = mint.get_accounts()
     return mint.get_net_worth(account_data)
 
@@ -686,13 +677,13 @@ def print_accounts(accounts):
     print(json.dumps(make_accounts_presentable(accounts), indent=2))
 
 
-def get_budgets(email, password, two_factor_barcode=None, headless=False):
-    mint = Mint(email, password, two_factor_barcode, headless)
+def get_budgets(email, password):
+    mint = Mint.create(email, password)
     return mint.get_budgets()
 
 
-def initiate_account_refresh(email, password, two_factor_barcode=None, headless=False):
-    mint = Mint(email, password, two_factor_barcode, headless)
+def initiate_account_refresh(email, password):
+    mint = Mint.create(email, password)
     return mint.initiate_account_refresh()
 
 
@@ -717,16 +708,6 @@ def main():
         nargs='?',
         default=None,
         help='The password for your Mint.com account')
-
-    cmdline.add_argument(
-        '--two-factor-barcode',
-        help='Barcode for 2 factor code (for if you have 2FA enabled',
-    )
-    cmdline.add_argument(
-        '--headless',
-        action='store_true',
-        help='Barcode for 2 factor code (for if you have 2FA enabled',
-    )
 
     cmdline.add_argument(
         '--accounts',
