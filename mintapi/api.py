@@ -97,9 +97,8 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
         # chrome_options.add_argument("--window-size=1920x1080")
 
     driver = Chrome(chrome_options=chrome_options, executable_path="%s" % executable_path)
-    driver.get("https://www.mint.com")
+    driver.get("https://accounts.intuit.com/index.html?redirect_url=https%3A%2F%2Fmint.intuit.com%2Foverview.event")
     driver.implicitly_wait(20)  # seconds
-    driver.find_element_by_link_text("Log In").click()
 
     driver.find_element_by_id("ius-userid").send_keys(email)
     driver.find_element_by_id("ius-password").send_keys(password)
@@ -132,7 +131,9 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
 
                     mfa_code_submit = driver.find_element_by_id("ius-mfa-otp-submit-btn")
                     mfa_code_submit.click()
-            except Exception as e:  # if anything goes wrong for any reason, give up on MFA
+            except NoSuchElementException:
+                pass
+            except Exception as e:
                 mfa_method = None
                 warnings.warn("Giving up on handling MFA. Please complete "
                               "the MFA process manually in the browser. Exception: " + repr(e))
@@ -143,8 +144,9 @@ def get_web_driver(email, password, headless=False, mfa_method=None,
 
     # Wait until the overview page has actually loaded, and if wait_for_sync==True, sync has completed.
     if wait_for_sync:
-        status_message = driver.find_element_by_css_selector(".SummaryView .message")
         try:
+            driver.implicitly_wait(5)
+            status_message = driver.find_element_by_css_selector(".SummaryView .message")
             WebDriverWait(driver, 5 * 60).until(
                 lambda x: "Account refresh complete" in status_message.get_attribute('innerHTML')
             )
